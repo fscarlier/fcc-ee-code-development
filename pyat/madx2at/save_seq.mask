@@ -1,0 +1,7 @@
+Option,-echo,-info;
+set,format="40.30g";
+Beam, particle = electron, pc=120;
+call,  file = '$FIN';
+use, sequence = L000013;
+save,file = '$FOUT';
+stop;
