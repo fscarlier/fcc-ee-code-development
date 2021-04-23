@@ -64,63 +64,36 @@ if __name__ == "__main__":
 
     ring = at.load_lattice('./Lattices/fcch_norad.mat', mat_key='ring')
     ring = at.Lattice(ring)
-    
-    # optics of the original lattice
     ring.radiation_off()
-    l0, q, qp, l = linopt(ring,dp=0,refpts=range(len(ring)),get_chrom = True, coupled=False, XYStep=xy_step, DPStep=dp_step)
     spos = ring.get_s_pos(range(len(ring)))
 
     ring_rad = ring.deepcopy()
     ring_rad.radiation_on(quadrupole_pass='auto')
     ring_rad.set_cavity_phase(method='tracking')
     ring_av = ring_rad.deepcopy()
-    
     ring_rad.tapering(niter = 2, quadrupole=True, sextupole=True, XYStep=xy_step, DPStep=dp_step)
-    l0t,qt,qpt,lt = linopt_rad(ring_rad, refpts=range(len(ring_rad)), get_chrom=True, coupled=False, XYStep=xy_step, DPStep=dp_step)
-
+    
+    # orbit
+    o0a, _ = at.find_orbit6(ring_av, XYStep=xy_step, DPStep=dp_step)
+    o6a = np.squeeze(lattice_pass(ring_av, o0a, refpts=range(len(ring))))
+    
+    o0, _ = find_orbit6(ring_rad, XYStep=xy_step, DPStep=dp_step)
+    o6 = np.squeeze(lattice_pass(ring_rad, o0, refpts=range(len(ring))))
+    spos = ring_rad.get_s_pos(range(len(ring_rad)))
+    
     Arcs = family_segmentation(ring_av)
-    average_tapering(ring_av, ring_rad, family = Arcs)
-    l0ta,qta,qpta,lta = linopt_rad(ring_av, refpts=range(len(ring_av)), get_chrom=True, coupled=False, XYStep=xy_step, DPStep=dp_step)
-
+    average_tapering(ring_av, ring_rad,quadrupole=True, sextupole=True, family = Arcs, XYStep=xy_step, DPStep=dp_step)
+    o0b, _ = at.find_orbit6(ring_av, XYStep=xy_step, DPStep=dp_step)
+    o6b = np.squeeze(lattice_pass(ring_av, o0b, refpts=range(len(ring))))
+    
     print('Computing time:', time.time()-t0, 's')
     
-    #visualising
-    plt.figure(figsize=(12,6),dpi=200)
-    plt.subplot(221)
-    plt.plot(spos,(lt.beta[:,0]-l.beta[:,0])/l.beta[:,0], label='pyAT', c='blue')
+    # visualise
+    plt.figure()
+    plt.plot(spos, o6[0], color = 'orange', label='Individual taper')
+    plt.plot(spos, o6a[0], color = 'navy', label='No taper')
+    plt.plot(spos, o6b[0], color = 'red', label='Average taper')
     plt.xlabel('s [m]')
-    plt.ylabel(r'$\frac{\Delta \beta_x}{\beta_x^Ref}$')
-    plt.legend(loc = 1, prop={'size': 8})
-
-    plt.subplot(222)
-    plt.plot(spos,(lt.beta[:,1]-l.beta[:,1])/l.beta[:,1], label='pyAT', c='blue')
-    plt.xlabel('s [m]')
-    plt.ylabel(r'$\frac{\Delta \beta_y}{\beta_y^Ref}$')
-    plt.legend(loc = 1, prop={'size': 8})
-    
-    plt.subplot(223)
-    plt.plot(spos,(lta.beta[:,0]-l.beta[:,0])/l.beta[:,0], label='pyAT-averaged', c='blue')
-    plt.xlabel('s [m]')
-    plt.ylabel(r'$\frac{\Delta \beta_x}{\beta_x^Ref}$')
-    plt.legend(loc = 1, prop={'size': 8})
-
-    plt.subplot(224)
-    plt.plot(spos,(lta.beta[:,1]-l.beta[:,1])/l.beta[:,1], label='pyAT-averaged', c='blue')
-    plt.xlabel('s [m]')
-    plt.ylabel(r'$\frac{\Delta \beta_y}{\beta_y^Ref}$')
-    plt.legend(loc = 1, prop={'size': 8})
-    plt.show()
-
-    plt.figure(figsize=(12,6),dpi=200)
-    plt.subplot(121)
-    plt.plot(spos, lt.dispersion[:,0] - l.dispersion[:,0], label='pyAT', c='blue')
-    plt.xlabel('s [m]')
-    plt.ylabel(r'$\Delta \eta_x$')
-    plt.legend(loc = 1, prop={'size': 8})
-    
-    plt.subplot(122)
-    plt.plot(spos, lta.dispersion[:,0] - l.dispersion[:,0], label='pyAT-averaged', c='blue')
-    plt.xlabel('s [m]')
-    plt.ylabel(r'$\Delta \eta_x$')
-    plt.legend(loc = 1, prop={'size': 8})
+    plt.ylabel('x [m]')
+    plt.legend(loc = 1)
     plt.show()
