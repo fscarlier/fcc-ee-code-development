@@ -1,4 +1,4 @@
-def average_tapering(ring, ring_rad, **kwargs):
+def average_tapering(ring, ring_rad, quadrupole=True, sextupole=True, **kwargs):
     """
     Delivers a scaled and averaged tapering for a predefined set of dipole families. Modifies the ring.
     PARAMETERS
@@ -6,8 +6,13 @@ def average_tapering(ring, ring_rad, **kwargs):
         ring_rad        individually tapered lattice
     KEYWORDS
         family          family of dipoles, set of respective indexes
+        qadrupole=True  scale quadrupole fields
+        sextupole=True  scale sextupole fields
+        XYStep=1.0e-8   transverse step for numerical computation
+        DPStep=1.0E-6   momentum deviation used for computation of orbit6
     """
-    
+    xy_step = kwargs.pop('XYStep', DConstant.XYStep)
+    dp_step = kwargs.pop('DPStep', DConstant.DPStep)
     fam = kwargs.pop('family')
     
     for dipoles in fam:
@@ -15,6 +20,22 @@ def average_tapering(ring, ring_rad, **kwargs):
         k0_arc =  get_value_refpts(ring, dipoles, 'BendingAngle')/get_value_refpts(ring, dipoles, 'Length')
         factor = np.average(k_arc/k0_arc, weights=None)
         set_value_refpts(ring, dipoles, 'PolynomB', factor*k0_arc, index=0)
+    
+    if quadrupole:
+        quadrupoles = get_refpts(ring, elements.Quadrupole)
+        k01 = get_value_refpts(ring, quadrupoles, 'PolynomB', index=1)
+        o0, _ = find_orbit6(ring, XYStep=xy_step, DPStep=dp_step)
+        o6 = np.squeeze(lattice_pass(ring, o0, refpts=range(len(ring))))
+        dpps = (o6[4, quadrupoles] + o6[4, quadrupoles+1]) / 2
+        set_value_refpts(ring, quadrupoles, 'PolynomB', k01*(1+dpps), index=1)
+
+    if sextupole:
+        sextupoles = get_refpts(ring, elements.Sextupole)
+        k02 = get_value_refpts(ring, sextupoles, 'PolynomB', index=2)
+        o0, _ = find_orbit6(ring, XYStep=xy_step, DPStep=dp_step)
+        o6 = np.squeeze(lattice_pass(ring, o0, refpts=range(len(ring))))
+        dpps = (o6[4, sextupoles] + o6[4, sextupoles+1]) / 2
+        set_value_refpts(ring, sextupoles, 'PolynomB', k02*(1+dpps), index=2)
         
 def family_segmentation(ring):
     """
