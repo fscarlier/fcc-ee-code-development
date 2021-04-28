@@ -1,4 +1,15 @@
-def average_tapering(ring, ring_rad, quadrupole=True, sextupole=True, **kwargs):
+import at
+import numpy as np
+import matplotlib.pyplot as plt
+from at.tracking import element_pass, lattice_pass
+from at.physics import linopt, fast_ring, linopt_rad
+from at.lattice import DConstant, PyElement, check_radiation
+from at import load_mat, get_refpts, get_elements, get_value_refpts, set_value_refpts, elements, find_orbit6
+import time
+import sys
+
+@check_radiation(True)
+def average_tapering(ring, ring_rad, quadrupole=True, sextupole=True, niter=1, **kwargs):
     """
     Delivers a scaled and averaged tapering for a predefined set of dipole families. Modifies the ring.
     PARAMETERS
@@ -14,12 +25,15 @@ def average_tapering(ring, ring_rad, quadrupole=True, sextupole=True, **kwargs):
     xy_step = kwargs.pop('XYStep', DConstant.XYStep)
     dp_step = kwargs.pop('DPStep', DConstant.DPStep)
     fam = kwargs.pop('family')
+    dipole_indexes = get_refpts(ring, elements.Dipole)
     
-    for dipoles in fam:
-        k_arc = get_value_refpts(ring_rad, dipoles, 'PolynomB')[:,0]
-        k0_arc =  get_value_refpts(ring, dipoles, 'BendingAngle')/get_value_refpts(ring, dipoles, 'Length')
-        factor = np.average(k_arc/k0_arc, weights=None)
-        set_value_refpts(ring, dipoles, 'PolynomB', factor*k0_arc, index=0)
+    for dip in fam:
+        for dipoles in dip:
+            k_arc = get_value_refpts(ring_rad, dipoles, 'PolynomB', index=0)
+            k0_arc =  get_value_refpts(ring, dipoles, 'BendingAngle')/get_value_refpts(ring, dipoles, 'Length')
+            factor = np.average(k_arc/k0_arc, weights=None)
+            set_value_refpts(ring, dipoles, 'PolynomB', factor*k0_arc, index=0)
+            set_value_refpts(ring, dipoles, 'PolynomB', 0.0 , index=1)
     
     if quadrupole:
         quadrupoles = get_refpts(ring, elements.Quadrupole)
@@ -39,22 +53,38 @@ def average_tapering(ring, ring_rad, quadrupole=True, sextupole=True, **kwargs):
         
 def family_segmentation(ring):
     """
-    Not a smart way of doing it, update needed. Currently divided into 'div_number' near-equal groups.
+    Currently divided into 4 groups as defined by the position of IPs and RFs, additional subdivisin in 'div_number' near-equal subgroups.
     """
-    div_number = 100
+    
+    div_number = 55
     dipole_indexes = get_refpts(ring, elements.Dipole)
-    Arcs = np.array_split(dipole_indexes, div_number) # allows non-equal splitting
+    IP_indexes = get_refpts(ring, 'IP*')
+    RF_indexes = get_refpts(ring, elements.RFCavity)
     
+    print('Number of dipoles per family:', len(dipole_indexes)/(4*div_number))
+    print('Number of dipoles:', len(dipole_indexes))
+
+    ind1 = int(np.argwhere(dipole_indexes < RF_indexes[0])[-1])
+    Arc1 = dipole_indexes[0:ind1]
+    Arc1 = np.array_split(Arc1, div_number) # allows non-equal splitting
+
+    ind2 = int(np.argwhere(dipole_indexes > RF_indexes[19])[0])
+    ind3 = int(np.argwhere(dipole_indexes < IP_indexes[1])[-1])
+    Arc2 = dipole_indexes[ind2:ind3]
+    Arc2 = np.array_split(Arc2, div_number)
+
+    ind4 = int(np.argwhere(dipole_indexes > IP_indexes[2])[0])
+    ind5 = int(np.argwhere(dipole_indexes < RF_indexes[20])[-1])
+    Arc3 = dipole_indexes[ind4:ind5]
+    Arc3 = np.array_split(Arc3, div_number)
+
+    ind6 = int(np.argwhere(dipole_indexes > RF_indexes[-1])[0])
+    ind7 = int(np.argwhere(dipole_indexes < IP_indexes[-1])[-1])
+    Arc4 = dipole_indexes[ind6:ind7]
+    Arc4 = np.array_split(Arc4, div_number)
+
+    Arcs = [Arc1, Arc2, Arc3, Arc4]
     return Arcs
-    
-import at
-import numpy as np
-import matplotlib.pyplot as plt
-from at.tracking import element_pass, lattice_pass
-from at.physics import linopt, fast_ring, linopt_rad
-from at.lattice import DConstant, PyElement
-from at import load_mat, get_refpts, get_elements, get_value_refpts, set_value_refpts, elements
-import time
 
 if __name__ == "__main__":
     # load lattices, step sizes adjusted to avoid systematics on lattice calculations
@@ -64,16 +94,17 @@ if __name__ == "__main__":
 
     ring = at.load_lattice('./Lattices/fcch_norad.mat', mat_key='ring')
     ring = at.Lattice(ring)
-    ring.radiation_off()
-    spos = ring.get_s_pos(range(len(ring)))
-
+    
+    # optics of the original lattice
     ring_rad = ring.deepcopy()
     ring_rad.radiation_on(quadrupole_pass='auto')
     ring_rad.set_cavity_phase(method='tracking')
     ring_av = ring_rad.deepcopy()
     ring_rad.tapering(niter = 2, quadrupole=True, sextupole=True, XYStep=xy_step, DPStep=dp_step)
+
+    print('Computing time:', time.time()-t0, 's')
     
-    # orbit
+    # visualising orbit and PolynomB
     o0a, _ = at.find_orbit6(ring_av, XYStep=xy_step, DPStep=dp_step)
     o6a = np.squeeze(lattice_pass(ring_av, o0a, refpts=range(len(ring))))
     
@@ -86,9 +117,6 @@ if __name__ == "__main__":
     o0b, _ = at.find_orbit6(ring_av, XYStep=xy_step, DPStep=dp_step)
     o6b = np.squeeze(lattice_pass(ring_av, o0b, refpts=range(len(ring))))
     
-    print('Computing time:', time.time()-t0, 's')
-    
-    # visualise
     plt.figure()
     plt.plot(spos, o6[0], color = 'orange', label='Individual taper')
     plt.plot(spos, o6a[0], color = 'navy', label='No taper')
@@ -96,4 +124,21 @@ if __name__ == "__main__":
     plt.xlabel('s [m]')
     plt.ylabel('x [m]')
     plt.legend(loc = 1)
+    plt.show()
+    
+    dipole_indexes = get_refpts(ring_rad, elements.Dipole)
+    sdip = ring_rad.get_s_pos(dipole_indexes)
+    b = get_value_refpts(ring_rad, dipole_indexes, 'BendingAngle')
+    l = get_value_refpts(ring_rad, dipole_indexes, 'Length')
+    B0 = get_value_refpts(ring_rad, dipole_indexes, 'PolynomB', index = 0)
+    
+    b_av = get_value_refpts(ring_av, dipole_indexes, 'BendingAngle')
+    l_av = get_value_refpts(ring_av, dipole_indexes, 'Length')
+    B0_av = get_value_refpts(ring_av, dipole_indexes, 'PolynomB', index = 0)
+    
+    plt.plot(sdip, B0/(b/l), color='navy', label='Individual')
+    plt.plot(sdip, B0_av/(b_av/l_av), color='orange', label = 'Average')
+    plt.xlabel('s [m]')
+    plt.ylabel(r'$\frac{B_0}{Angle / Length}$')
+    plt.legend(loc=1)
     plt.show()
