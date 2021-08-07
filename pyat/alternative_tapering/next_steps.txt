@@ -1,0 +1,7 @@
+1. Change linopt_rad to linopt6 ( linopt_rad uses a numerical trick to simplectify the transfer matrix which fails for strong damping cases )
+
+2. No need to separate main arc dipoles into B1, B1S, and B1L - keep them together for average tapering (use only dipole_main in dipole_natural_family() )
+
+3. Run a check to see if in the 100 micron case the segmentation is breaking the sextupole pair symmetry and causing the emittance blowup
+
+4. Matching of the lattice 
